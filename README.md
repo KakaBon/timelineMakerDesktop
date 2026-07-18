@@ -22,8 +22,7 @@
 对于这个工具可以：
 
 - 下载 Releases 中的 exe 文件直接运行（无需安装 Python）
-- 下载或克隆到本地后直接运行 timelineMakerDesktop.exe，
-或点击 run.bat（需安装 Python）运行源码。
+- 下载或克隆到本地后直接运行 `timelineMakerDesktop.exe`，或点击 `run.bat`（需安装 Python）运行源码。
 - 下载或克隆源码进行二次开发
 
 CSV 数据格式要求必须有：
