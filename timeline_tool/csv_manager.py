@@ -1,29 +1,37 @@
 """CSVManagerMixin：按功能拆分自原始桌面时间轴工具。"""
 
-import csv
-import io
 import re
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 from .config import PALETTE
-from .utils import parse_date, resource_path
+from .csv_document import (
+    CsvFormat,
+    decode_csv_bytes,
+    parse_csv_document,
+    parse_flexible_date,
+    serialize_editor_text,
+    validate_date_style,
+)
+from .utils import resource_path
 
 
 class CSVManagerMixin:
     def load_sample(self):
-        sample_path = resource_path("test-data.csv")
+        sample_path = resource_path("assets/data/samples/test-data.csv")
 
         try:
-            csv_text = sample_path.read_text(encoding="utf-8-sig")
-            rows = self.parse_csv_text(csv_text)
+            data = sample_path.read_bytes()
+            csv_text, encoding = decode_csv_bytes(data)
+            document = parse_csv_document(csv_text, encoding=encoding)
             self.current_csv_name = sample_path.name
             self.current_csv_directory = Path.cwd()
             self.load_rows(
-                rows,
+                document.rows,
                 "已载入示例数据",
-                csv_text=csv_text,
+                csv_text=document.editor_text,
+                csv_format=document.format,
             )
             self.has_unexported_csv_edits = False
         except Exception as exc:
@@ -32,42 +40,31 @@ class CSVManagerMixin:
     def import_csv(self):
         path = filedialog.askopenfilename(
             title="选择 CSV 文件",
-            filetypes=[("CSV 文件", "*.csv"), ("所有文件", "*.*")],
+            filetypes=[("CSV/TSV 文件", "*.csv *.tsv"), ("所有文件", "*.*")],
         )
         if not path:
             return
 
-        last_error = None
-
-        for encoding in ("utf-8-sig", "utf-8", "gb18030"):
-            try:
-                csv_text = Path(path).read_text(encoding=encoding)
-                rows = self.parse_csv_text(csv_text)
-                selected_path = Path(path)
-                self.current_csv_name = selected_path.name
-                self.current_csv_directory = selected_path.parent
-                self.load_rows(
-                    rows,
-                    f"已导入 {Path(path).name}",
-                    csv_text=csv_text,
-                )
-                self.has_unexported_csv_edits = False
-                return
-            except Exception as exc:
-                last_error = exc
-
-        messagebox.showerror("导入失败", str(last_error))
+        try:
+            data = Path(path).read_bytes()
+            csv_text, encoding = decode_csv_bytes(data)
+            document = parse_csv_document(csv_text, encoding=encoding)
+            selected_path = Path(path)
+            self.current_csv_name = selected_path.name
+            self.current_csv_directory = selected_path.parent
+            self.load_rows(
+                document.rows,
+                f"已导入 {selected_path.name}",
+                csv_text=document.editor_text,
+                csv_format=document.format,
+            )
+            self.has_unexported_csv_edits = False
+        except Exception as exc:
+            messagebox.showerror("导入失败", str(exc))
 
     def parse_csv_text(self, csv_text):
-        if not csv_text.strip():
-            raise ValueError("CSV 文本为空。")
-
-        reader = csv.DictReader(io.StringIO(csv_text))
-
-        if not reader.fieldnames:
-            raise ValueError("CSV 缺少表头。")
-
-        return list(reader)
+        current_encoding = getattr(self, "current_csv_format", CsvFormat()).encoding
+        return parse_csv_document(csv_text, encoding=current_encoding)
 
     def set_csv_editor_text(self, csv_text):
         self.current_csv_text = csv_text
@@ -314,11 +311,18 @@ class CSVManagerMixin:
             return
 
         try:
-            rows = self.parse_csv_text(csv_text)
+            document = self.parse_csv_text(csv_text)
+            # 编辑区本身是逻辑多列表格；保留导入时的单列/多列包装方式。
+            current_format = getattr(self, "current_csv_format", CsvFormat())
+            document.format.structure = current_format.structure
+            document.format.outer_delimiter = current_format.outer_delimiter
+            document.format.encoding = current_format.encoding
+            document.format.newline = current_format.newline
             self.load_rows(
-                rows,
+                document.rows,
                 "已应用 CSV 编辑区修改",
-                csv_text=csv_text,
+                csv_text=document.editor_text,
+                csv_format=document.format,
             )
             self.has_unexported_csv_edits = True
         except Exception as exc:
@@ -346,8 +350,9 @@ class CSVManagerMixin:
             return False
 
         try:
-            # 使用 UTF-8 BOM，便于 Windows 与表格软件直接识别中文。
-            Path(path).write_text(csv_text, encoding="utf-8-sig")
+            csv_format = getattr(self, "current_csv_format", CsvFormat())
+            export_text = serialize_editor_text(csv_text, csv_format)
+            Path(path).write_text(export_text, encoding=csv_format.encoding)
             self.has_unexported_csv_edits = False
             exported_path = str(Path(path))
             exported_name = Path(path).name
@@ -386,42 +391,76 @@ class CSVManagerMixin:
         if self.export_csv():
             self.destroy()
 
-    def load_rows(self, raw_rows, message, csv_text=None):
+    def load_rows(self, raw_rows, message, csv_text=None, csv_format=None):
         normalized = []
+        date_styles = []
+        errors = []
 
-        for row in raw_rows:
+        for fallback_index, row in enumerate(raw_rows, start=2):
+            source_row = int(row.get("__source_row__", fallback_index))
             cleaned = {
                 str(key).strip().lower(): ("" if value is None else str(value).strip())
                 for key, value in row.items()
-                if key is not None
+                if key is not None and key != "__source_row__"
             }
-
-            if not cleaned:
+            if not cleaned or not any(cleaned.values()):
                 continue
 
             date_value = cleaned.get("date", "")
             title = cleaned.get("title", "")
             category = cleaned.get("category", "") or cleaned.get("group", "")
-            side = cleaned.get("side", "top").lower()
-            side = "bottom" if side in ("下方", "bottom") else "top"
+            side_value = cleaned.get("side", "").strip().casefold()
 
-            if not parse_date(date_value) or not title or not category:
+            parsed_date, date_style = parse_flexible_date(date_value)
+            if not date_value:
+                errors.append(f"第 {source_row} 行 date 为空")
+            elif not parsed_date:
+                if date_style == "ambiguous-numeric":
+                    errors.append(f"第 {source_row} 行日期无法判断日/月顺序：{date_value}")
+                else:
+                    errors.append(f"第 {source_row} 行日期格式无法识别：{date_value}")
+            else:
+                date_styles.append(date_style)
+
+            if not title:
+                errors.append(f"第 {source_row} 行 title 为空")
+
+            side_map = {
+                "top": "top", "上": "top", "上侧": "top", "上方": "top",
+                "bottom": "bottom", "下": "bottom", "下侧": "bottom", "下方": "bottom",
+            }
+            side = side_map.get(side_value)
+            if not side:
+                errors.append(f"第 {source_row} 行 side 必须为 top/bottom 或 上/下")
+
+            if errors and any(item.startswith(f"第 {source_row} 行") for item in errors):
                 continue
 
             cleaned["date"] = date_value
             cleaned["title"] = title
-            cleaned["category"] = category
+            cleaned["category"] = category or "未分类"
             cleaned["side"] = side
             cleaned["_id"] = len(normalized) + 1
+            cleaned["_source_row"] = source_row
             normalized.append(cleaned)
 
+        if errors:
+            preview = "\n".join(errors[:12])
+            if len(errors) > 12:
+                preview += f"\n……另有 {len(errors) - 12} 项"
+            raise ValueError(preview)
+
+        validate_date_style(date_styles)
+
         if not normalized:
-            raise ValueError("没有读到有效事件。请确认存在 date、title、category/group、side 列。")
+            raise ValueError("没有读到有效事件。每条事件至少需要 date、title 和 side。")
 
         self.rows = normalized
 
         if csv_text is not None:
             self.set_csv_editor_text(csv_text)
+        if csv_format is not None:
+            self.current_csv_format = csv_format
 
         self.categories = list(dict.fromkeys(row["category"] for row in self.rows))
         self.category_colors = {

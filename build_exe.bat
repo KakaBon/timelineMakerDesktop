@@ -9,9 +9,9 @@ python -m PyInstaller ^
   --windowed ^
   --exclude-module numpy ^
   --version-file version_info.txt ^
-  --icon=icon.ico ^
-  --add-data "test-data.csv;." ^
-  --add-data "icon.ico;." ^
+  --icon=assets/images/icon.ico ^
+  --add-data "assets/data/samples/test-data.csv;assets/data/samples" ^
+  --add-data "assets/images/icon.ico;assets/images" ^
   --name "timelineMakerDesktop" ^
   app.py
 

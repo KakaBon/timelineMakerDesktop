@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .csv_manager import CSVManagerMixin
+from .csv_document import CsvFormat
 from .exporters import ExportMixin
 from .legend import LegendMixin
 from .search import TimelineSearchMixin
@@ -27,7 +28,9 @@ class TimelineApp(
         self.title("时间轴制作工具")
 
         try:
-            self.iconbitmap(resource_path("icon.ico"))
+            self.iconbitmap(
+                str(resource_path("assets/images/icon.ico"))
+            )
         except tk.TclError:
             pass
 
@@ -72,6 +75,7 @@ class TimelineApp(
 
         # 当前 CSV 与导出状态
         self.current_csv_text = ""
+        self.current_csv_format = CsvFormat()
         self.current_csv_name = "test-data.csv"
         self.current_csv_directory = Path.cwd()
         self.has_unexported_csv_edits = False

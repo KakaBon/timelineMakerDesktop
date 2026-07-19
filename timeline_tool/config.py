@@ -1,7 +1,7 @@
 """应用级常量。"""
 
 APP_NAME = "timelineMakerDesktop"
-VERSION = "1.0.0"
+VERSION = "1.0.1-test"
 AUTHOR = "KaKaBon"
 
 

@@ -62,7 +62,7 @@ title,side,date,group
 
 ## 截图
 
-![桌面版时间轴制作工具截图](docs/images/timelineMakerDesktop.png)
+![桌面版时间轴制作工具截图](assets/images/timelineMakerDesktop.png)
 
 ## Acknowledgements
 

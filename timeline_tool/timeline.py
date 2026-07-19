@@ -362,6 +362,7 @@ class TimelineMixin:
             "_level",
             "_x",
             "_box_width",
+            "_source_row",
         }
 
         lines = [
@@ -370,7 +371,7 @@ class TimelineMixin:
         ]
 
         for key, value in item.items():
-            if key in known:
+            if key in known or key.startswith("_"):
                 continue
 
             text = str(value).strip()

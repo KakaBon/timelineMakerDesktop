@@ -4,14 +4,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from .config import DATE_FORMAT
+from .csv_document import parse_flexible_date
 
 
 def parse_date(value: str):
-    try:
-        return datetime.strptime(value.strip(), DATE_FORMAT)
-    except Exception:
-        return None
+    parsed, _style = parse_flexible_date(value)
+    return parsed
 
 
 def lighten(hex_color: str, ratio: float = 0.86) -> str:
