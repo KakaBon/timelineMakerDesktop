@@ -137,9 +137,8 @@ def parse_csv_document(text: str, *, encoding: str = "utf-8-sig") -> ParsedCsvDo
         if not unwrapped:
             raise
         structure = "single_wrapped"
-        editor_text = unwrapped[0]
+        editor_text, outer_delimiter = unwrapped
         delimiter, fieldnames, data_rows = _candidate_delimiter(editor_text)
-        outer_delimiter = delimiter
     header_map = _validate_headers(fieldnames)
     width = len(fieldnames)
     rows: list[dict[str, str]] = []
@@ -167,6 +166,45 @@ def parse_csv_document(text: str, *, encoding: str = "utf-8-sig") -> ParsedCsvDo
         ),
         fieldnames=fieldnames,
     )
+
+
+def serialize_csv_model(
+    fieldnames: list[str],
+    rows: list[dict[str, str]],
+    fmt: CsvFormat,
+) -> str:
+    """仅在导出时，把内存中的表格模型序列化为 CSV 文本。"""
+    if not fieldnames:
+        return ""
+
+    logical_output = io.StringIO(newline="")
+    writer = csv.writer(
+        logical_output,
+        delimiter=fmt.delimiter,
+        lineterminator=fmt.newline,
+        quoting=csv.QUOTE_MINIMAL,
+    )
+    writer.writerow(fieldnames)
+    for row in rows:
+        writer.writerow([
+            "" if row.get(field) is None else str(row.get(field, ""))
+            for field in fieldnames
+        ])
+    logical_text = logical_output.getvalue()
+
+    if fmt.structure != "single_wrapped":
+        return logical_text
+
+    physical_output = io.StringIO(newline="")
+    outer_writer = csv.writer(
+        physical_output,
+        delimiter=fmt.outer_delimiter,
+        lineterminator=fmt.newline,
+        quoting=csv.QUOTE_MINIMAL,
+    )
+    for line in logical_text.splitlines():
+        outer_writer.writerow([line])
+    return physical_output.getvalue()
 
 
 def serialize_editor_text(editor_text: str, fmt: CsvFormat) -> str:

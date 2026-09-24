@@ -260,9 +260,18 @@ class TimelineMixin:
             category_layout[("bottom", name)] = (items, lane_height)
             bottom_height += lane_height + self.lane_gap
 
-        axis_y = self.top_margin + top_height + self.axis_gap
-        content_height = axis_y + self.axis_gap + bottom_height + self.bottom_margin
-        height = max(content_height, self.canvas.winfo_height() - 2)
+        viewport_height = max(1, self.canvas.winfo_height() - 2)
+
+        # 当前没有任何可见事件时，不再沿用“上侧内容之后放时间轴”的
+        # 常规布局，否则轴线会停在画布上方。空视图中让时间轴默认位于
+        # 当前视窗的纵向正中；一旦重新显示事件，仍恢复原有动态布局。
+        if not top_categories and not bottom_categories:
+            height = viewport_height
+            axis_y = height / 2
+        else:
+            axis_y = self.top_margin + top_height + self.axis_gap
+            content_height = axis_y + self.axis_gap + bottom_height + self.bottom_margin
+            height = max(content_height, viewport_height)
 
         return {
             "width": width,
@@ -275,10 +284,18 @@ class TimelineMixin:
 
     def render(self):
         if not self.rows:
+            self.hide_tooltip()
+            self.canvas.delete("all")
             return
 
         self.hide_tooltip()
-        self.canvas.delete("all")
+
+        # 不先清空画布。先给当前一代元素统一打旧标签，在它们上方完整画出
+        # 新一代，最后一次性删除旧一代。这样更新过程中画布从来不会出现
+        # “先白一下再重新画回来”的空帧，side / 数据修改时视觉保持安静。
+        previous_tag = "__timeline_previous_render__"
+        self.canvas.dtag("all", previous_tag)
+        self.canvas.addtag_all(previous_tag)
 
         layout = self.calculate_layout()
         self.last_layout = layout
@@ -351,6 +368,7 @@ class TimelineMixin:
             )
 
         self.canvas.configure(scrollregion=(0, 0, width, height))
+        self.canvas.delete(previous_tag)
 
     def draw_time_grid(self, width, height, axis_y):
         for year in range(self.view_start.year, self.view_end.year + 1):
@@ -528,6 +546,10 @@ class TimelineMixin:
 
     def on_event_press(self, _event, item):
         """左键按住事件时临时高亮，直到左键真正松开。"""
+        # Canvas item 的 tag_bind 会返回 "break"，因此应用级 bind_all
+        # 可能收不到这次点击。这里必须直接把撤销上下文切到全局，
+        # 保证“最近一次点击在 CSV 区外”这一规则对事件框也成立。
+        self.undo_context = "global"
         self.pressed_event_id = item["_id"]
         self.drag_start_x = None
         self.drag_start_view = None
@@ -559,6 +581,8 @@ class TimelineMixin:
         return "break"
 
     def on_drag_start(self, event):
+        # 点击时间轴空白区域同样明确属于 CSV 区外。
+        self.undo_context = "global"
         if self.canvas.find_withtag("current"):
             tags = self.canvas.gettags("current")
             if "timeline_item" in tags:
