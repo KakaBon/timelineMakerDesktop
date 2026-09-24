@@ -297,6 +297,7 @@ class UILayoutMixin:
              "点击行号或列头可选择行 / 列；选中列以淡蓝色整列高亮。垃圾桶仅标记为预删除，应用后才正式删除；再次点击已预删除的行头 / 列头可取消预删除。带 * 的关键字段不可删除。\n\n"
              "查找 / 替换只处理数据单元格，不包含表头和行号。\n\n"
              "应用时如存在无效数据，会高亮对应单元格并逐项引导修正。\n\n"
+             "date 支持常见日期写法：YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD、YYYY年M月D日、DD.MM.YYYY / DD/MM/YYYY / DD-MM-YYYY、MM.DD.YYYY / MM/DD/YYYY / MM-DD-YYYY，以及 25 Sep 2014、Sep 25 2014、2014 Sep 25 这类英文或德文月份名称/缩写。纯数字的日月年或月日年若本身有歧义，会根据同一日期列中的无歧义日期统一判断；若整列都无法判断，则要求改成无歧义格式。\n\n"
              "导出 CSV 会保存当前 CSV 草稿内容。"),
         ).pack(side="left", padx=(5, 7))
 
@@ -698,8 +699,8 @@ class UILayoutMixin:
         self.csv_editor.bind("<Shift-MouseWheel>", self.on_csv_grid_shift_mousewheel)
         self.csv_editor.bind("<Motion>", self.on_csv_grid_motion, add="+")
         self.csv_editor.bind("<Leave>", self.on_csv_grid_leave)
-        self.csv_editor.bind("<Control-z>", self.handle_contextual_undo_shortcut)
-        self.csv_editor.bind("<Control-y>", self.handle_contextual_redo_shortcut)
+        self.csv_editor.bind("<Control-z>", self.undo_csv_local_edit)
+        self.csv_editor.bind("<Control-y>", self.redo_csv_local_edit)
 
         self.bind_all("<MouseWheel>", self.on_global_mousewheel, add="+")
         self.bind_all("<Button-4>", self.on_global_mousewheel, add="+")

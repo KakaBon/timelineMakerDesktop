@@ -91,10 +91,10 @@ class ExportMixin:
         image = Image.new("RGB", (width, height), "white")
         draw = ImageDraw.Draw(image)
 
-        title_font = self.find_font(15, bold=True)
-        date_font = self.find_font(11)
-        category_font = self.find_font(15, bold=True)
-        year_font = self.find_font(12)
+        title_font = self.find_font(self._scaled_font_size(10, 6), bold=True)
+        date_font = self.find_font(self._scaled_font_size(8, 5))
+        category_font = self.find_font(self._scaled_font_size(10, 6), bold=True)
+        year_font = self.find_font(self._scaled_font_size(9, 6))
 
         axis_y = layout["axis_y"]
 
@@ -159,7 +159,7 @@ class ExportMixin:
         for name, lane_top, lane_bottom, side in lane_positions:
             separator_y = lane_bottom if side == "top" else lane_top
             draw.line((0, separator_y, width, separator_y), fill="#edf0f4", width=1)
-            draw.text((16, lane_top + 6), name, font=category_font, fill="#30394c")
+            draw.text((16, lane_top + max(5, round(9 * self.visual_scale))), name, font=category_font, fill="#30394c")
 
         image.save(path, "PNG")
 
@@ -192,13 +192,19 @@ class ExportMixin:
         for item in items:
             x = item["_x"]
             box_width = item["_box_width"]
-            level_offset = item["_level"] * (self.box_height + 10)
+            level_gap = max(4, round(10 * self.visual_scale))
+            level_offset = item["_level"] * (self.box_height + level_gap)
 
             if side == "top":
-                box_y = lane_bottom - 20 - self.box_height - level_offset
+                box_y = (
+                    lane_bottom
+                    - max(8, round(20 * self.visual_scale))
+                    - self.box_height
+                    - level_offset
+                )
                 connector_end = box_y + self.box_height
             else:
-                box_y = lane_top + 30 + level_offset
+                box_y = lane_top + max(12, round(30 * self.visual_scale)) + level_offset
                 connector_end = box_y
 
             if x + box_width / 2 < self.clip_start:
@@ -218,7 +224,7 @@ class ExportMixin:
             title_box = draw.textbbox((0, 0), item["title"], font=title_font)
             title_width = title_box[2] - title_box[0]
             draw.text(
-                (x - title_width / 2, box_y + 5),
+                (x - title_width / 2, box_y + max(3, round(6 * self.visual_scale))),
                 item["title"],
                 font=title_font,
                 fill="#172033",
@@ -227,7 +233,7 @@ class ExportMixin:
             date_box = draw.textbbox((0, 0), item["date"], font=date_font)
             date_width = date_box[2] - date_box[0]
             draw.text(
-                (x - date_width / 2, box_y + 26),
+                (x - date_width / 2, box_y + max(12, round(24 * self.visual_scale))),
                 item["date"],
                 font=date_font,
                 fill="#667084",
@@ -237,6 +243,10 @@ class ExportMixin:
         width = layout["width"]
         height = layout["height"]
         axis_y = layout["axis_y"]
+        title_font_size = self._scaled_font_size(10, 6)
+        date_font_size = self._scaled_font_size(8, 5)
+        category_font_size = self._scaled_font_size(10, 6)
+        year_font_size = self._scaled_font_size(9, 6)
 
         clip_width = width - self.clip_start
         parts = [
@@ -248,10 +258,10 @@ class ExportMixin:
             '</defs>',
             '<style>',
             'text{font-family:"Microsoft YaHei","PingFang SC",sans-serif}',
-            '.year{font-size:12px;fill:#657084}',
-            '.category{font-size:13px;font-weight:700;fill:#30394c}',
-            '.title{font-size:13px;font-weight:700;fill:#172033}',
-            '.date{font-size:10px;fill:#667084}',
+            f'.year{{font-size:{year_font_size}px;fill:#657084}}',
+            f'.category{{font-size:{category_font_size}px;font-weight:700;fill:#30394c}}',
+            f'.title{{font-size:{title_font_size}px;font-weight:700;fill:#172033}}',
+            f'.date{{font-size:{date_font_size}px;fill:#667084}}',
             '</style>',
             '<g clip-path="url(#plotClip)">',
         ]
@@ -307,7 +317,7 @@ class ExportMixin:
         for name, lane_top, lane_bottom, side in lane_positions:
             separator_y = lane_bottom if side == "top" else lane_top
             parts.append(f'<line x1="0" y1="{separator_y:.2f}" x2="{width}" y2="{separator_y:.2f}" stroke="#edf0f4"/>')
-            parts.append(f'<text x="16" y="{lane_top + 20:.2f}" class="category">{xml_escape(name)}</text>')
+            parts.append(f'<text x="16" y="{lane_top + max(12, round(17 * self.visual_scale)):.2f}" class="category">{xml_escape(name)}</text>')
 
         parts.append("</svg>")
         return "\n".join(parts)
@@ -319,21 +329,27 @@ class ExportMixin:
         for item in items:
             x = item["_x"]
             box_width = item["_box_width"]
-            level_offset = item["_level"] * (self.box_height + 10)
+            level_gap = max(4, round(10 * self.visual_scale))
+            level_offset = item["_level"] * (self.box_height + level_gap)
 
             if side == "top":
-                box_y = lane_bottom - 20 - self.box_height - level_offset
+                box_y = (
+                    lane_bottom
+                    - max(8, round(20 * self.visual_scale))
+                    - self.box_height
+                    - level_offset
+                )
                 connector_end = box_y + self.box_height
             else:
-                box_y = lane_top + 30 + level_offset
+                box_y = lane_top + max(12, round(30 * self.visual_scale)) + level_offset
                 connector_end = box_y
 
             output.extend([
                 f'<line x1="{x:.2f}" y1="{axis_y:.2f}" x2="{x:.2f}" y2="{connector_end:.2f}" stroke="{color}" stroke-width="1.4"/>',
                 f'<circle cx="{x:.2f}" cy="{axis_y:.2f}" r="4" fill="{color}"/>',
                 f'<rect x="{x - box_width / 2:.2f}" y="{box_y:.2f}" width="{box_width:.2f}" height="{self.box_height}" rx="7" fill="{lighten(color)}" stroke="{color}"/>',
-                f'<text x="{x:.2f}" y="{box_y + 18:.2f}" text-anchor="middle" class="title">{xml_escape(item["title"])}</text>',
-                f'<text x="{x:.2f}" y="{box_y + 35:.2f}" text-anchor="middle" class="date">{xml_escape(item["date"])}</text>',
+                f'<text x="{x:.2f}" y="{box_y + max(9, round(17 * self.visual_scale)):.2f}" text-anchor="middle" class="title">{xml_escape(item["title"])}</text>',
+                f'<text x="{x:.2f}" y="{box_y + max(18, round(34 * self.visual_scale)):.2f}" text-anchor="middle" class="date">{xml_escape(item["date"])}</text>',
             ])
 
         return output

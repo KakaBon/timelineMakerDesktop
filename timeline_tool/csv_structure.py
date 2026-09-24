@@ -11,6 +11,8 @@ from .csv_document import (
     decode_csv_bytes,
     parse_csv_document,
     parse_flexible_date,
+    infer_numeric_date_style,
+    get_current_numeric_date_style_hint,
     serialize_csv_model,
     validate_date_style,
 )
@@ -469,13 +471,25 @@ class CSVStructureMixin:
         errors = []
 
         self._ensure_csv_selection_state()
+        active_rows = [
+            row for row in self.csv_model_rows
+            if self._csv_row_uid(row) not in self.csv_pending_delete_row_uids
+        ]
+        date_style_hint = infer_numeric_date_style(
+            str(row.get(date_field, "")).strip() for row in active_rows
+        )
+        if date_style_hint is None:
+            date_style_hint = get_current_numeric_date_style_hint()
+
         pending_rows = []
         for row_index, row in enumerate(self.csv_model_rows):
             if self._csv_row_uid(row) in self.csv_pending_delete_row_uids:
                 pending_rows.append((row_index, row))
                 continue
             date_value = str(row.get(date_field, "")).strip()
-            parsed_date, date_style = parse_flexible_date(date_value)
+            parsed_date, date_style = parse_flexible_date(
+                date_value, preferred_numeric_style=date_style_hint
+            )
             if not date_value:
                 errors.append(
                     f"第 {row_index + 1} 行 date 为空"

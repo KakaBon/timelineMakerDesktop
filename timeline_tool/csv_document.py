@@ -231,7 +231,7 @@ def serialize_editor_text(editor_text: str, fmt: CsvFormat) -> str:
 _MONTHS = {
     "jan": 1, "january": 1, "januar": 1,
     "feb": 2, "february": 2, "februar": 2,
-    "mar": 3, "march": 3, "mär": 3, "maerz": 3, "märz": 3,
+    "mar": 3, "march": 3, "mär": 3, "mrz": 3, "maerz": 3, "märz": 3,
     "apr": 4, "april": 4,
     "may": 5, "mai": 5,
     "jun": 6, "june": 6, "juni": 6,
@@ -244,6 +244,53 @@ _MONTHS = {
 }
 
 
+# 当前应用一次只编辑一份 CSV。这里仅记录这份“正式数据”已经确认的
+# 数字型日/月顺序，供时间轴等只拿到单个日期字符串的代码继续解析。
+# 导入新 CSV 时不会沿用旧提示；只有当前文档内的后续编辑可复用。
+_CURRENT_NUMERIC_DATE_STYLE_HINT: str | None = None
+_USE_CURRENT_DATE_STYLE_HINT = object()
+
+
+def set_current_numeric_date_style_hint(style: str | None) -> None:
+    global _CURRENT_NUMERIC_DATE_STYLE_HINT
+    if style and (style.startswith("dmy-") or style.startswith("mdy-")):
+        _CURRENT_NUMERIC_DATE_STYLE_HINT = style
+    else:
+        _CURRENT_NUMERIC_DATE_STYLE_HINT = None
+
+
+def get_current_numeric_date_style_hint() -> str | None:
+    return _CURRENT_NUMERIC_DATE_STYLE_HINT
+
+
+def infer_numeric_date_style(values: Iterable[str]) -> str | None:
+    """从整列中无歧义的数字日期推断 DMY/MDY 及分隔符。
+
+    例如同一列中出现 25.09.2014，就能确定点号格式是 DMY，
+    从而把 09.08.2015 解释为 2015-08-09。
+    如果整列没有任何能唯一判定顺序的日期，仍返回 None。
+    """
+    candidates: set[str] = set()
+
+    for value in values:
+        raw = str(value or "").strip()
+        m = re.fullmatch(r"(\d{1,2})([-./])(\d{1,2})\2(\d{4})", raw)
+        if not m:
+            continue
+
+        first, second, year = int(m.group(1)), int(m.group(3)), int(m.group(4))
+        sep = m.group(2)
+
+        if first > 12 and second <= 12:
+            if _build_date(year, second, first):
+                candidates.add(f"dmy-{sep}")
+        elif second > 12 and first <= 12:
+            if _build_date(year, first, second):
+                candidates.add(f"mdy-{sep}")
+
+    return next(iter(candidates)) if len(candidates) == 1 else None
+
+
 def _build_date(year: int, month: int, day: int) -> datetime | None:
     try:
         return datetime(year, month, day)
@@ -251,10 +298,16 @@ def _build_date(year: int, month: int, day: int) -> datetime | None:
         return None
 
 
-def parse_flexible_date(value: str) -> tuple[datetime | None, str | None]:
+def parse_flexible_date(
+    value: str,
+    preferred_numeric_style=_USE_CURRENT_DATE_STYLE_HINT,
+) -> tuple[datetime | None, str | None]:
     raw = value.strip()
     if not raw:
         return None, None
+
+    if preferred_numeric_style is _USE_CURRENT_DATE_STYLE_HINT:
+        preferred_numeric_style = _CURRENT_NUMERIC_DATE_STYLE_HINT
 
     m = re.fullmatch(r"(\d{4})年(\d{1,2})月(\d{1,2})日", raw)
     if m:
@@ -272,6 +325,13 @@ def parse_flexible_date(value: str) -> tuple[datetime | None, str | None]:
             return _build_date(year, second, first), f"dmy-{sep}"
         if second > 12 and first <= 12:
             return _build_date(year, first, second), f"mdy-{sep}"
+
+        # 两个数字都 <= 12 时，单独看这一格无法判断日/月顺序。
+        # 若整列已经通过其它无歧义日期确认了顺序，则沿用整列规则。
+        if preferred_numeric_style == f"dmy-{sep}":
+            return _build_date(year, second, first), preferred_numeric_style
+        if preferred_numeric_style == f"mdy-{sep}":
+            return _build_date(year, first, second), preferred_numeric_style
         return None, "ambiguous-numeric"
 
     normalized = re.sub(r"[,]+", " ", raw)
@@ -279,11 +339,16 @@ def parse_flexible_date(value: str) -> tuple[datetime | None, str | None]:
     parts = [part for part in normalized.split() if part]
     if len(parts) == 3:
         lower = [part.casefold() for part in parts]
-        # 月 日 年
+        # 月 日 年，例如 Sep 25, 2014 / September 25 2014
         month = _MONTHS.get(lower[0])
         if month and parts[1].isdigit() and parts[2].isdigit():
             return _build_date(int(parts[2]), month, int(parts[1])), "mdy-name"
-        # 日 月 年
+        # 年 月 日，例如 2014 Sep 25 / 2014 September 25
+        if parts[0].isdigit() and len(parts[0]) == 4:
+            month = _MONTHS.get(lower[1])
+            if month and parts[2].isdigit():
+                return _build_date(int(parts[0]), month, int(parts[2])), "ymd-name"
+        # 日 月 年，例如 25 Sep 2014 / 25 September 2014
         month = _MONTHS.get(lower[1])
         if parts[0].isdigit() and month and parts[2].isdigit():
             return _build_date(int(parts[2]), month, int(parts[0])), "dmy-name"

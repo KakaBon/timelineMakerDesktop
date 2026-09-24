@@ -11,6 +11,9 @@ from .csv_document import (
     decode_csv_bytes,
     parse_csv_document,
     parse_flexible_date,
+    infer_numeric_date_style,
+    get_current_numeric_date_style_hint,
+    set_current_numeric_date_style_hint,
     serialize_csv_model,
     validate_date_style,
 )
@@ -25,11 +28,23 @@ class CSVApplyMixin:
         side/note/platform changes do not affect the source/event/target controls,
         while row order, date, title or category changes do.
         """
+        rows = list(rows)
+        date_hint = infer_numeric_date_style(
+            str(row.get("date", "")).strip() for row in rows
+        )
+        if date_hint is None:
+            date_hint = get_current_numeric_date_style_hint()
+
         result = []
         for row in rows:
             category = str(row.get("category", "") or row.get("group", "")).strip() or "未分类"
+            raw_date = str(row.get("date", "")).strip()
+            parsed_date, _style = parse_flexible_date(
+                raw_date, preferred_numeric_style=date_hint
+            )
+            date_key = parsed_date.strftime("%Y-%m-%d") if parsed_date else raw_date
             result.append((
-                str(row.get("date", "")).strip(),
+                date_key,
                 str(row.get("title", "")).strip(),
                 category,
             ))
@@ -292,9 +307,24 @@ class CSVApplyMixin:
             # 操作先画一次半成品、随后又画一次最终状态造成闪烁。
             refresh_timeline = bool(refresh_legend)
 
+        raw_rows = list(raw_rows)
         normalized = []
         date_styles = []
         errors = []
+
+        # 先看整列，而不是逐格孤立判断。只要同一列中出现一个
+        # 25.09.2014 这类无歧义日期，就能确定 09.08.2015 的日/月顺序。
+        date_values = []
+        for row in raw_rows:
+            for key, value in row.items():
+                if key is not None and str(key).strip().lower() == "date":
+                    date_values.append("" if value is None else str(value).strip())
+                    break
+        date_style_hint = infer_numeric_date_style(date_values)
+        # update_csv_model=False 表示当前文档内部的正式操作；若这一刻
+        # 恰好只剩全是歧义日期，可沿用该文档此前已经确认的顺序。
+        if date_style_hint is None and not update_csv_model:
+            date_style_hint = get_current_numeric_date_style_hint()
 
         for fallback_index, row in enumerate(raw_rows, start=2):
             source_row = int(row.get("__source_row__", fallback_index))
@@ -311,7 +341,9 @@ class CSVApplyMixin:
             category = cleaned.get("category", "") or cleaned.get("group", "")
             side_value = cleaned.get("side", "").strip().casefold()
 
-            parsed_date, date_style = parse_flexible_date(date_value)
+            parsed_date, date_style = parse_flexible_date(
+                date_value, preferred_numeric_style=date_style_hint
+            )
             if not date_value:
                 errors.append(f"第 {source_row} 行 date 为空")
             elif not parsed_date:
@@ -355,6 +387,9 @@ class CSVApplyMixin:
         if not normalized:
             raise ValueError("没有读到有效事件。每条事件至少需要 date、title 和 side。")
 
+        # 只有整份数据校验成功后才更新当前文档的日期顺序提示；
+        # 导入失败不会污染随后打开的其它 CSV。
+        set_current_numeric_date_style_hint(date_style_hint)
         self.rows = normalized
 
         if csv_format is not None:

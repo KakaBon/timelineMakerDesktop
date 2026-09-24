@@ -6,7 +6,11 @@ from datetime import datetime
 from pathlib import Path
 
 from .csv_manager import CSVManagerMixin
-from .csv_document import CsvFormat
+from .csv_document import (
+    CsvFormat,
+    get_current_numeric_date_style_hint,
+    set_current_numeric_date_style_hint,
+)
 from .exporters import ExportMixin
 from .legend import LegendMixin
 from .search import TimelineSearchMixin
@@ -77,6 +81,7 @@ class TimelineApp(
         # 当前 CSV 与导出状态
         self.current_csv_text = ""
         self.current_csv_format = CsvFormat()
+        self.current_numeric_date_style_hint = None
         self.current_csv_name = "test-data.csv"
         self.current_csv_directory = Path.cwd()
         self.has_unexported_csv_edits = False
@@ -175,6 +180,7 @@ class TimelineApp(
             "csv_side_display_values": tuple(getattr(self, "csv_side_display_values", ("上侧", "下侧"))),
             "current_csv_text": getattr(self, "current_csv_text", ""),
             "current_csv_format": copy.deepcopy(getattr(self, "current_csv_format", CsvFormat())),
+            "current_numeric_date_style_hint": get_current_numeric_date_style_hint(),
             "has_unexported_csv_edits": bool(getattr(self, "has_unexported_csv_edits", False)),
             "event_migration_rules": self._snapshot_event_migration_rules(),
         }
@@ -564,6 +570,15 @@ class TimelineApp(
             if migration_plan_changed:
                 self.event_migration_rules = target_migration_rules
 
+            # 日期顺序属于正式版本语义。即使保留一份未应用 CSV 草稿，
+            # 时间轴也必须按被恢复的正式版本解释歧义数字日期。
+            self.current_numeric_date_style_hint = snapshot.get(
+                "current_numeric_date_style_hint"
+            )
+            set_current_numeric_date_style_hint(
+                self.current_numeric_date_style_hint
+            )
+
             if not preserve_csv_draft:
                 self.csv_fieldnames = list(snapshot["csv_fieldnames"])
                 self.csv_model_rows = copy.deepcopy(snapshot["csv_model_rows"])
@@ -578,6 +593,12 @@ class TimelineApp(
                 self.csv_side_display_values = tuple(snapshot["csv_side_display_values"])
                 self.current_csv_text = snapshot["current_csv_text"]
                 self.current_csv_format = copy.deepcopy(snapshot["current_csv_format"])
+                self.current_numeric_date_style_hint = snapshot.get(
+                    "current_numeric_date_style_hint"
+                )
+                set_current_numeric_date_style_hint(
+                    self.current_numeric_date_style_hint
+                )
                 self.has_unexported_csv_edits = bool(snapshot["has_unexported_csv_edits"])
                 if hasattr(self, "_clear_csv_validation_state"):
                     self._clear_csv_validation_state()

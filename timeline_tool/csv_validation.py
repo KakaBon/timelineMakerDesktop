@@ -11,6 +11,8 @@ from .csv_document import (
     decode_csv_bytes,
     parse_csv_document,
     parse_flexible_date,
+    infer_numeric_date_style,
+    get_current_numeric_date_style_hint,
     serialize_csv_model,
     validate_date_style,
 )
@@ -39,6 +41,16 @@ class CSVValidationMixin:
         if not (date_field and title_field and side_field):
             return errors
 
+        active_rows = [
+            row for row in self.csv_model_rows
+            if self._csv_row_uid(row) not in self.csv_pending_delete_row_uids
+        ]
+        date_style_hint = infer_numeric_date_style(
+            str(row.get(date_field, "")).strip() for row in active_rows
+        )
+        if date_style_hint is None:
+            date_style_hint = get_current_numeric_date_style_hint()
+
         for row_index, row in enumerate(self.csv_model_rows):
             if self._csv_row_uid(row) in self.csv_pending_delete_row_uids:
                 continue
@@ -46,7 +58,9 @@ class CSVValidationMixin:
             date_value = str(row.get(date_field, "")).strip()
             title = str(row.get(title_field, "")).strip()
             side_value = str(row.get(side_field, "")).strip()
-            parsed_date, date_style = parse_flexible_date(date_value)
+            parsed_date, date_style = parse_flexible_date(
+                date_value, preferred_numeric_style=date_style_hint
+            )
             if not date_value:
                 errors.append((row_index, self.csv_fieldnames.index(date_field), f"第 {source_row} 行 date 为空"))
             elif not parsed_date:
